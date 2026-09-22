@@ -24,12 +24,27 @@ messages are published to a target chat or channel with no sender attribution.
      target chat and removes the buttons.
    - **Reject** → the buttons are removed and nothing is published.
 
+### Spoilers
+
+Photos, videos and animations are delivered covered by a spoiler, in the
+moderation chat and in the target chat alike.
+
+`copyMessage` has no `has_spoiler` parameter, so covered media cannot be
+copied — the bot re-sends it by `file_id` with `sendPhoto` / `sendVideo` /
+`sendAnimation` instead. That applies at both hops, because a plain copy on
+approval would republish the media uncovered.
+
+Telegram supports spoilers on those three types only. Documents, audio and
+voice notes travel uncovered, so a photo sent as an uncompressed file is *not*
+hidden.
+
 ### Tagging
 
 The tag is appended as a new line. How depends on the content type:
 
-- **Photo, video, animation, audio, document, voice** — copied with an
-  overridden `caption`. These are the only types offered a tag.
+- **Photo, video, animation** — re-sent with the tag in the caption (see
+  Spoilers above).
+- **Audio, document, voice** — copied with an overridden `caption`.
 - **Text** — not offered a tag, but the code still handles one (resent with
   `sendMessage` as `text + "\n" + tag`, because `copyMessage` cannot rewrite
   text) so that prompts created before this rule can still be tapped.

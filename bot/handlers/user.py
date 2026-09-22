@@ -16,6 +16,7 @@ from bot.keyboards import (
     build_send_keyboard,
     build_tag_keyboard,
 )
+from bot.relay import CAPTIONABLE, relay
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +40,6 @@ CANCELLED_TEXT = (
     "❌ Сообщение не отправлено. Пришлите следующее собщение, чтобы продолжить."
 )
 
-# Content types Telegram lets us attach a caption to. Only these get offered a
-# tag; everything else (text, stickers, video notes) just gets a send button.
-CAPTIONABLE = {"photo", "video", "animation", "audio", "document", "voice"}
-
 
 @router.message(CommandStart())
 async def handle_start(message: Message) -> None:
@@ -59,54 +56,6 @@ async def handle_submission(message: Message) -> None:
     # Replying links the prompt to the submission, so the callback can recover
     # the original message without us storing anything.
     await message.reply(text, reply_markup=keyboard)
-
-
-async def _deliver(bot: Bot, settings: Settings, message: Message, tag: str | None) -> None:
-    """Put the submission into the moderation chat, with the tag on a new line."""
-    keyboard = build_moderation_keyboard()
-
-    if tag is None:
-        # copy_message strips any "forwarded from" attribution.
-        await bot.copy_message(
-            chat_id=settings.moderation_chat_id,
-            from_chat_id=message.chat.id,
-            message_id=message.message_id,
-            reply_markup=keyboard,
-        )
-        return
-
-    if message.text is not None:
-        # Text is no longer offered a tag, but a prompt created before that
-        # change can still be tapped, so keep handling it. copy_message cannot
-        # rewrite text, so resend it instead; existing entities stay valid
-        # because the tag is appended at the end.
-        await bot.send_message(
-            chat_id=settings.moderation_chat_id,
-            text=f"{message.text}\n{tag}",
-            entities=message.entities,
-            reply_markup=keyboard,
-        )
-        return
-
-    if message.content_type in CAPTIONABLE:
-        caption = f"{message.caption}\n{tag}" if message.caption else tag
-        await bot.copy_message(
-            chat_id=settings.moderation_chat_id,
-            from_chat_id=message.chat.id,
-            message_id=message.message_id,
-            caption=caption,
-            caption_entities=message.caption_entities,
-            reply_markup=keyboard,
-        )
-        return
-
-    # Stickers, video notes and friends carry no caption — send them untagged.
-    await bot.copy_message(
-        chat_id=settings.moderation_chat_id,
-        from_chat_id=message.chat.id,
-        message_id=message.message_id,
-        reply_markup=keyboard,
-    )
 
 
 @router.callback_query(F.data == CANCEL_CALLBACK)
@@ -138,7 +87,13 @@ async def handle_tag_choice(
         logger.exception("Failed to clear the tag keyboard")
 
     try:
-        await _deliver(bot, settings, original, TAGS[callback.data])
+        await relay(
+            bot,
+            settings.moderation_chat_id,
+            original,
+            tag=TAGS[callback.data],
+            reply_markup=build_moderation_keyboard(),
+        )
     except Exception:
         # Never log message content or sender identity — only that it failed.
         logger.exception("Failed to copy a submission to the moderation chat")

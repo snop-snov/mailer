@@ -14,6 +14,7 @@ from bot.keyboards import (
     REJECT_CALLBACK,
     build_status_keyboard,
 )
+from bot.relay import relay
 
 logger = logging.getLogger(__name__)
 
@@ -40,11 +41,9 @@ async def handle_moderation(
 
     if callback.data == APPROVE_CALLBACK:
         try:
-            await bot.copy_message(
-                chat_id=settings.target_chat_id,
-                from_chat_id=settings.moderation_chat_id,
-                message_id=message.message_id,
-            )
+            # Relay rather than copy: copy_message cannot set has_spoiler, so a
+            # plain copy would publish the media uncovered.
+            await relay(bot, settings.target_chat_id, message)
         except Exception:
             logger.exception("Failed to copy an approved message to the target chat")
             await callback.answer("Publishing failed, try again.", show_alert=True)

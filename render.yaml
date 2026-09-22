@@ -1,0 +1,18 @@
+# Render Blueprint: runs the bot as an always-on background worker using long
+# polling. No public URL, no HTTPS, no webhook configuration needed.
+services:
+  - type: worker
+    name: mailer-bot
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: 0.5c-512mb
+    region: frankfurt
+    autoDeployTrigger: commit
+    envVars:
+      # Prompted for on Blueprint creation; never committed to the repo.
+      - key: BOT_TOKEN
+        sync: false
+      - key: MODERATION_CHAT_ID
+        sync: false
+      - key: TARGET_CHAT_ID
+        sync: false

@@ -8,14 +8,36 @@ messages are published to a target chat or channel with no sender attribution.
 
 1. A user sends the bot a message in a private chat (text, photo, video,
    document, voice, sticker, animation — anything).
-2. The bot uses `copyMessage` to place a **copy** of it into the moderation
-   chat. A copy carries no "forwarded from" header, so the sender stays
-   anonymous. The bot attaches an inline keyboard: ✅ Approve / ❌ Reject.
-3. The user gets a short `✅ Sent.` confirmation.
+2. The bot replies asking for confirmation. For content that can carry a
+   caption (photo, video, animation, audio, document, voice) it offers three
+   buttons: `без тега` / `#моё` / `#не_моё`. For everything else — text,
+   stickers, video notes — a tag is impossible or meaningless, so it offers a
+   single `отправляем!` button. Both prompts also carry `❌ Стоп Отмена!!`,
+   which discards the submission and replaces the prompt with a "not sent"
+   notice. Nothing is forwarded until a send button is tapped.
+3. On tap, the bot places a **copy** of the message into the moderation chat,
+   appending the chosen tag on a new line. A copy carries no "forwarded from"
+   header, so the sender stays anonymous. The bot attaches an inline keyboard:
+   ✅ Approve / ❌ Reject. The prompt in the user's chat becomes `Отправлено ✅`.
 4. A moderator taps a button:
    - **Approve** → the bot copies the message from the moderation chat into the
      target chat and removes the buttons.
    - **Reject** → the buttons are removed and nothing is published.
+
+### Tagging
+
+The tag is appended as a new line. How depends on the content type:
+
+- **Photo, video, animation, audio, document, voice** — copied with an
+  overridden `caption`. These are the only types offered a tag.
+- **Text** — not offered a tag, but the code still handles one (resent with
+  `sendMessage` as `text + "\n" + tag`, because `copyMessage` cannot rewrite
+  text) so that prompts created before this rule can still be tapped.
+- **Stickers, video notes** — Telegram allows no caption on these, so they are
+  always sent untagged.
+
+`без тега` always takes the plain `copyMessage` path, byte-identical to the
+original.
 
 ### No storage
 
@@ -201,9 +223,12 @@ unit so it survives reboots.
 ## Manual end-to-end check
 
 1. Run with `--polling`.
-2. From a test account, DM the bot a text message and a photo. Both should
-   appear in the moderation chat with Approve/Reject buttons and **no**
-   "forwarded from" line, and the sender should see `✅ Sent.` each time.
+2. From a test account, DM the bot a text message and a photo. Each should get
+   a `Готово, отправляем в чат?` prompt with three tag buttons. Tap `#моё` on
+   the photo and `без тега` on the text. Both should then appear in the
+   moderation chat with Approve/Reject buttons and **no** "forwarded from"
+   line, the photo carrying `#моё` on a new line in its caption, and the
+   prompts should change to `Отправлено ✅`.
 3. Approve one, reject the other. The approved one should appear in the target
    chat with no attribution; both moderation-chat messages should lose their
    buttons.

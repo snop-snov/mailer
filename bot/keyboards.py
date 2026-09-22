@@ -44,7 +44,7 @@ def build_tag_keyboard() -> InlineKeyboardMarkup:
 def build_send_keyboard() -> InlineKeyboardMarkup:
     """For content Telegram cannot attach a caption to — no tag choice to make."""
     builder = InlineKeyboardBuilder()
-    builder.button(text="отправляем!", callback_data=NO_TAG_CALLBACK)
+    builder.button(text="✅ Отправляем!", callback_data=NO_TAG_CALLBACK)
     builder.button(text=CANCEL_TEXT, callback_data=CANCEL_CALLBACK)
     builder.adjust(1, 1)
     return builder.as_markup()

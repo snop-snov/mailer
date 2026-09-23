@@ -12,27 +12,34 @@ messages are published to a target chat or channel with no sender attribution.
    caption (photo, video, animation, audio, document, voice) it offers three
    buttons: `без тега` / `#моё` / `#не_моё`. For everything else — text,
    stickers, video notes — a tag is impossible or meaningless, so it offers a
-   single `отправляем!` button. Both prompts also carry `❌ Стоп Отмена!!`,
+   single `✅ Отправляем!` button. Both prompts also carry `❌ Стоп Отмена!!`,
    which discards the submission and replaces the prompt with a "not sent"
    notice. Nothing is forwarded until a send button is tapped.
 3. On tap, the bot places a **copy** of the message into the moderation chat,
    appending the chosen tag on a new line. A copy carries no "forwarded from"
-   header, so the sender stays anonymous. The bot attaches an inline keyboard:
-   ✅ Approve / ❌ Reject. The prompt in the user's chat becomes `Отправлено ✅`.
+   header, so the sender stays anonymous. The moderation-chat copy is
+   uncovered — moderators need to see the actual content to judge it. The bot
+   attaches an inline keyboard: ✅ Approve / ❌ Reject. The prompt in the
+   user's chat becomes `✅ Отправлено!`.
 4. A moderator taps a button:
-   - **Approve** → the bot copies the message from the moderation chat into the
-     target chat and removes the buttons.
-   - **Reject** → the buttons are removed and nothing is published.
+   - **Approve** → the bot publishes the message from the moderation chat into
+     the target chat, covering photos/videos/animations with a spoiler.
+   - **Reject** → nothing is published.
+
+   Either way, the Approve/Reject buttons are replaced with a single inert
+   status button recording the outcome and who decided it, e.g.
+   `✅ Approved by Jane Doe` or `❌ Rejected by Jane Doe`.
 
 ### Spoilers
 
-Photos, videos and animations are delivered covered by a spoiler, in the
-moderation chat and in the target chat alike.
+Photos, videos and animations are delivered covered by a spoiler in the target
+chat only — the moderation-chat copy stays uncovered so moderators can review
+the actual content.
 
 `copyMessage` has no `has_spoiler` parameter, so covered media cannot be
-copied — the bot re-sends it by `file_id` with `sendPhoto` / `sendVideo` /
-`sendAnimation` instead. That applies at both hops, because a plain copy on
-approval would republish the media uncovered.
+copied — on approval the bot re-sends it by `file_id` (taken from the
+moderation chat's own copy, so this doesn't reintroduce any attribution) with
+`sendPhoto` / `sendVideo` / `sendAnimation` instead of copying it.
 
 Telegram supports spoilers on those three types only. Documents, audio and
 voice notes travel uncovered, so a photo sent as an uncompressed file is *not*
@@ -40,11 +47,11 @@ hidden.
 
 ### Tagging
 
-The tag is appended as a new line. How depends on the content type:
+The tag is appended as a new line, in the copy placed into the moderation
+chat. How depends on the content type:
 
-- **Photo, video, animation** — re-sent with the tag in the caption (see
-  Spoilers above).
-- **Audio, document, voice** — copied with an overridden `caption`.
+- **Photo, video, animation, audio, document, voice** — copied with an
+  overridden `caption`.
 - **Text** — not offered a tag, but the code still handles one (resent with
   `sendMessage` as `text + "\n" + tag`, because `copyMessage` cannot rewrite
   text) so that prompts created before this rule can still be tapped.
@@ -52,14 +59,17 @@ The tag is appended as a new line. How depends on the content type:
   always sent untagged.
 
 `без тега` always takes the plain `copyMessage` path, byte-identical to the
-original.
+original. The tag is already baked into the caption by the time a moderator
+approves, so publishing to the target chat carries it over unchanged.
 
 ### No storage
 
 The bot keeps no database, no files, and logs no message content or sender
 identity. The only place a message exists is Telegram's own copies in the
-moderation and target chats. Approval works by copying the moderation-chat
-message itself, so no mapping between users and messages is ever needed.
+moderation and target chats. Approval works directly off the moderation-chat
+message itself — its own `message_id`, caption and (for spoilered media)
+`file_id` are all publishing needs — so no mapping between users and messages
+is ever needed.
 
 Because of that, anyone who can see the moderation chat can act on submissions,
 and the callback handler additionally refuses any button press that did not come
@@ -82,36 +92,7 @@ from the configured `MODERATION_CHAT_ID`.
 - **Target chat/channel**: where approved messages get published. Add the bot as
   an administrator with permission to post messages.
 
-### 3. Get the chat IDs
-
-With `BOT_TOKEN` already in `.env`, the bundled helper is the easiest way:
-
-```bash
-python scripts/get_chat_id.py
-```
-
-Leave it running, then post a message in each chat. It prints
-`id  type  title` for every chat the bot gets an update from. Stop it with
-Ctrl-C before starting the bot — both use `getUpdates`, and only one consumer
-can read updates at a time.
-
-Two gotchas:
-
-- **Groups:** by default a bot only receives *commands* in groups (privacy
-  mode). Either send `/start` in the group, or make the bot an admin, which
-  turns privacy mode off for it.
-- **Channels:** the bot must already be an administrator; then post anything and
-  the `channel_post` update reveals the id.
-
-Alternatives if you'd rather not run the script: forward a message from the chat
-to [@userinfobot](https://t.me/userinfobot), add
-[@getidsbot](https://t.me/getidsbot) to the chat temporarily, or read `chat.id`
-straight from `https://api.telegram.org/bot<TOKEN>/getUpdates`.
-
-Supergroup and channel IDs are negative and start with `-100`; a private chat id
-is a positive user id.
-
-### 4. Configure
+### 3. Configure
 
 ```bash
 cp .env.example .env
@@ -129,7 +110,7 @@ $EDITOR .env
 | `WEB_SERVER_HOST` | no (default `0.0.0.0`) | Listen address behind the proxy |
 | `WEB_SERVER_PORT` | no (default `8080`) | Listen port behind the proxy |
 
-### 5. Install
+### 4. Install
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
@@ -244,9 +225,10 @@ unit so it survives reboots.
    moderation chat with Approve/Reject buttons and **no** "forwarded from"
    line, the photo carrying `#моё` on a new line in its caption, and the
    prompts should change to `Отправлено ✅`.
-3. Approve one, reject the other. The approved one should appear in the target
-   chat with no attribution; both moderation-chat messages should lose their
-   buttons.
+3. Approve the photo, reject the text. The photo should appear in the target
+   chat covered by a spoiler (tap to reveal) and with no attribution; the text
+   should not appear anywhere else; both moderation-chat messages should lose
+   their buttons.
 
 ## Layout
 
@@ -254,12 +236,11 @@ unit so it survives reboots.
 bot/
 ├── main.py                 # entrypoint: webhook server / polling fallback
 ├── config.py               # env-based settings, fail-fast validation
-├── keyboards.py            # Approve/Reject inline keyboard
+├── keyboards.py            # Tag/send/moderation/status inline keyboards
+├── relay.py                # relay() into moderation, publish() into target w/ spoiler
 ├── handlers/
     ├── user.py             # /start + private messages → moderation chat
     └── moderation.py       # Approve/Reject callback handling
-scripts/
-└── get_chat_id.py          # dev helper: print chat ids from getUpdates
 Dockerfile                  # runs the bot in polling mode
 render.yaml                 # Render Blueprint: always-on background worker
 ```

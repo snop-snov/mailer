@@ -17,33 +17,6 @@ SPOILERABLE = {"photo", "video", "animation"}
 CAPTIONABLE = {"photo", "video", "animation", "audio", "document", "voice"}
 
 
-async def _send_spoilered(
-    bot: Bot,
-    chat_id: int,
-    message: Message,
-    caption: str | None,
-    reply_markup: InlineKeyboardMarkup | None,
-) -> None:
-    """Re-send media by file_id so a spoiler can be applied.
-
-    copy_message has no has_spoiler parameter, so copying is not an option when
-    the media needs covering.
-    """
-    common = {
-        "chat_id": chat_id,
-        "caption": caption,
-        "caption_entities": message.caption_entities,
-        "has_spoiler": True,
-        "reply_markup": reply_markup,
-    }
-    if message.photo:
-        await bot.send_photo(photo=message.photo[-1].file_id, **common)
-    elif message.video:
-        await bot.send_video(video=message.video.file_id, **common)
-    else:
-        await bot.send_animation(animation=message.animation.file_id, **common)
-
-
 async def relay(
     bot: Bot,
     chat_id: int,
@@ -52,19 +25,14 @@ async def relay(
     tag: str | None = None,
     reply_markup: InlineKeyboardMarkup | None = None,
 ) -> None:
-    """Deliver `message` into `chat_id` with no sender attribution.
+    """Copy `message` into `chat_id` with no sender attribution.
 
-    Media is covered by a spoiler. `tag`, when given, is appended on a new line
-    to the caption (or the text, for a text message).
+    `tag`, when given, is appended on a new line to the caption (or the text,
+    for a text message). Never spoilers media — this is used to deliver
+    submissions into the moderation chat, where moderators need to see the
+    actual content to judge it.
     """
     content_type = message.content_type
-
-    if content_type in SPOILERABLE:
-        caption = message.caption
-        if tag:
-            caption = f"{caption}\n{tag}" if caption else tag
-        await _send_spoilered(bot, chat_id, message, caption, reply_markup)
-        return
 
     if message.text is not None:
         if tag:
@@ -99,6 +67,45 @@ async def relay(
 
     # Stickers, video notes and friends: copy as-is. copy_message strips any
     # "forwarded from" attribution.
+    await bot.copy_message(
+        chat_id=chat_id,
+        from_chat_id=message.chat.id,
+        message_id=message.message_id,
+        reply_markup=reply_markup,
+    )
+
+
+async def publish(
+    bot: Bot,
+    chat_id: int,
+    message: Message,
+    *,
+    reply_markup: InlineKeyboardMarkup | None = None,
+) -> None:
+    """Deliver an already-anonymized moderation-chat `message` into `chat_id`.
+
+    Coverable media is spoilered; copy_message has no has_spoiler parameter,
+    so it's resent by file_id instead. The file_id comes from the moderation
+    chat's own copy, not the original submitter's chat, so this doesn't
+    reintroduce any attribution. Any tag is already baked into the caption
+    from when the message was copied into moderation.
+    """
+    if message.content_type in SPOILERABLE:
+        common = {
+            "chat_id": chat_id,
+            "caption": message.caption,
+            "caption_entities": message.caption_entities,
+            "has_spoiler": True,
+            "reply_markup": reply_markup,
+        }
+        if message.photo:
+            await bot.send_photo(photo=message.photo[-1].file_id, **common)
+        elif message.video:
+            await bot.send_video(video=message.video.file_id, **common)
+        else:
+            await bot.send_animation(animation=message.animation.file_id, **common)
+        return
+
     await bot.copy_message(
         chat_id=chat_id,
         from_chat_id=message.chat.id,

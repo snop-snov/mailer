@@ -1,4 +1,9 @@
-"""Inline keyboards. Callback payloads are static: no per-message state is kept."""
+"""Inline keyboards.
+
+No per-message state is kept server-side. The only dynamic payload is the id of
+the target-chat message a submission replies to, appended to the callback data
+as ``<base>:<message_id>`` so it travels with the buttons themselves.
+"""
 
 from aiogram.types import InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -13,8 +18,16 @@ NO_TAG_CALLBACK = "snd:none"
 MINE_CALLBACK = "snd:mine"
 NOT_MINE_CALLBACK = "snd:notmine"
 CANCEL_CALLBACK = "snd:cancel"
+REPLY_CALLBACK = "snd:reply"
+# Back from the "send a link" step. Carries whether the submission can take a
+# tag (t/p), because the prompt no longer exposes the submission it replies to.
+BACK_CALLBACK = "snd:back"
 
 CANCEL_TEXT = "❌ Стоп Отмена!!"
+REPLY_TEXT = "↩️ Ответить на сообщение"
+REPLY_CHANGE_TEXT = "↩️ Другое сообщение"
+BACK_TEXT = "← Назад"
+REPLY_URL_TEXT = "↩️ Replying to message"
 
 TAGS: dict[str, str | None] = {
     NO_TAG_CALLBACK: None,
@@ -23,35 +36,85 @@ TAGS: dict[str, str | None] = {
 }
 
 
-def build_moderation_keyboard() -> InlineKeyboardMarkup:
+def pack(base: str, reply_to: int | None = None) -> str:
+    """Append the id of the message to reply to, if any, to a callback payload."""
+    return f"{base}:{reply_to}" if reply_to else base
+
+
+def unpack(data: str | None) -> tuple[str, int | None]:
+    """Inverse of `pack`. Payloads without an id (older prompts) give None."""
+    data = data or ""
+    head, sep, tail = data.rpartition(":")
+    if sep and tail.isdigit():
+        return head, int(tail)
+    return data, None
+
+
+def _reply_url_button(builder: InlineKeyboardBuilder, reply_url: str | None) -> bool:
+    if reply_url:
+        builder.button(text=REPLY_URL_TEXT, url=reply_url)
+        return True
+    return False
+
+
+def build_moderation_keyboard(
+    reply_to: int | None = None, reply_url: str | None = None
+) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text="✅ Approve", callback_data=APPROVE_CALLBACK)
-    builder.button(text="❌ Reject", callback_data=REJECT_CALLBACK)
+    builder.button(text="✅ Approve", callback_data=pack(APPROVE_CALLBACK, reply_to))
+    builder.button(text="❌ Reject", callback_data=pack(REJECT_CALLBACK, reply_to))
+    rows = [2]
+    if _reply_url_button(builder, reply_url):
+        rows.append(1)
+    builder.adjust(*rows)
+    return builder.as_markup()
+
+
+def build_tag_keyboard(reply_to: int | None = None) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="без тега", callback_data=pack(NO_TAG_CALLBACK, reply_to))
+    builder.button(text="#моё", callback_data=pack(MINE_CALLBACK, reply_to))
+    builder.button(text="#не_моё", callback_data=pack(NOT_MINE_CALLBACK, reply_to))
+    builder.button(
+        text=REPLY_CHANGE_TEXT if reply_to else REPLY_TEXT,
+        callback_data=REPLY_CALLBACK,
+    )
+    builder.button(text=CANCEL_TEXT, callback_data=CANCEL_CALLBACK)
+    builder.adjust(3, 1, 1)
+    return builder.as_markup()
+
+
+def build_send_keyboard(reply_to: int | None = None) -> InlineKeyboardMarkup:
+    """For content Telegram cannot attach a caption to — no tag choice to make."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Отправляем!", callback_data=pack(NO_TAG_CALLBACK, reply_to))
+    builder.button(
+        text=REPLY_CHANGE_TEXT if reply_to else REPLY_TEXT,
+        callback_data=REPLY_CALLBACK,
+    )
+    builder.button(text=CANCEL_TEXT, callback_data=CANCEL_CALLBACK)
+    builder.adjust(1, 1, 1)
+    return builder.as_markup()
+
+
+def build_link_request_keyboard(taggable: bool) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text=BACK_TEXT, callback_data=f"{BACK_CALLBACK}:{'t' if taggable else 'p'}"
+    )
+    builder.button(text=CANCEL_TEXT, callback_data=CANCEL_CALLBACK)
     builder.adjust(2)
     return builder.as_markup()
 
 
-def build_tag_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(text="без тега", callback_data=NO_TAG_CALLBACK)
-    builder.button(text="#моё", callback_data=MINE_CALLBACK)
-    builder.button(text="#не_моё", callback_data=NOT_MINE_CALLBACK)
-    builder.button(text=CANCEL_TEXT, callback_data=CANCEL_CALLBACK)
-    builder.adjust(3, 1)
-    return builder.as_markup()
-
-
-def build_send_keyboard() -> InlineKeyboardMarkup:
-    """For content Telegram cannot attach a caption to — no tag choice to make."""
-    builder = InlineKeyboardBuilder()
-    builder.button(text="✅ Отправляем!", callback_data=NO_TAG_CALLBACK)
-    builder.button(text=CANCEL_TEXT, callback_data=CANCEL_CALLBACK)
-    builder.adjust(1, 1)
-    return builder.as_markup()
-
-
-def build_status_keyboard(text: str) -> InlineKeyboardMarkup:
+def build_status_keyboard(
+    text: str, reply_url: str | None = None
+) -> InlineKeyboardMarkup:
     """A single inert button that records the decision on the message itself."""
     builder = InlineKeyboardBuilder()
     builder.button(text=text[:64], callback_data=DONE_CALLBACK)
+    rows = [1]
+    if _reply_url_button(builder, reply_url):
+        rows.append(1)
+    builder.adjust(*rows)
     return builder.as_markup()

@@ -7,7 +7,7 @@ Nothing here keeps state between updates: every call works purely from the
 from __future__ import annotations
 
 from aiogram import Bot
-from aiogram.types import InlineKeyboardMarkup, Message
+from aiogram.types import InlineKeyboardMarkup, Message, ReplyParameters
 
 # Telegram only supports a spoiler overlay on these. Documents, audio and voice
 # cannot be covered, so a photo sent as an uncompressed file stays visible.
@@ -80,6 +80,7 @@ async def publish(
     chat_id: int,
     message: Message,
     *,
+    reply_to_message_id: int | None = None,
     reply_markup: InlineKeyboardMarkup | None = None,
 ) -> None:
     """Deliver an already-anonymized moderation-chat `message` into `chat_id`.
@@ -89,13 +90,25 @@ async def publish(
     chat's own copy, not the original submitter's chat, so this doesn't
     reintroduce any attribution. Any tag is already baked into the caption
     from when the message was copied into moderation.
+
+    `reply_to_message_id` makes the published message a reply to that message
+    in `chat_id`. If that message no longer exists, the message is still posted,
+    just without the reply.
     """
+    reply_parameters = (
+        ReplyParameters(
+            message_id=reply_to_message_id, allow_sending_without_reply=True
+        )
+        if reply_to_message_id
+        else None
+    )
     if message.content_type in SPOILERABLE:
         common = {
             "chat_id": chat_id,
             "caption": message.caption,
             "caption_entities": message.caption_entities,
             "has_spoiler": True,
+            "reply_parameters": reply_parameters,
             "reply_markup": reply_markup,
         }
         if message.photo:
@@ -110,5 +123,6 @@ async def publish(
         chat_id=chat_id,
         from_chat_id=message.chat.id,
         message_id=message.message_id,
+        reply_parameters=reply_parameters,
         reply_markup=reply_markup,
     )

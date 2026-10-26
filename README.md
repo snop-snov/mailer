@@ -15,6 +15,8 @@ messages are published to a target chat or channel with no sender attribution.
    single `✅ Отправляем!` button. Both prompts also carry `❌ Стоп Отмена!!`,
    which discards the submission and replaces the prompt with a "not sent"
    notice. Nothing is forwarded until a send button is tapped.
+   Both prompts also have `↩️ Ответить на сообщение` — see
+   [Replying to a message](#replying-to-a-message).
 3. On tap, the bot places a **copy** of the message into the moderation chat,
    appending the chosen tag on a new line. A copy carries no "forwarded from"
    header, so the sender stays anonymous. The moderation-chat copy is
@@ -29,6 +31,29 @@ messages are published to a target chat or channel with no sender attribution.
    Either way, the Approve/Reject buttons are replaced with a single inert
    status button recording the outcome and who decided it, e.g.
    `✅ Approved by Jane Doe` or `❌ Rejected by Jane Doe`.
+
+### Replying to a message
+
+A sender can make the published message a reply to an existing message in the
+target chat:
+
+1. Tap `↩️ Ответить на сообщение`. The prompt turns into a request for a link,
+   with `← Назад` (drop the reply) and cancel buttons.
+2. Send the message link (Telegram: long-press → *Copy link*) **as a reply to
+   that prompt**. A link sent any other way is treated as a new submission.
+3. The bot checks that the link is a message in `TARGET_CHAT_ID` (accepted:
+   `t.me/c/<id>/<msg>`, `t.me/<username>/<msg>`, and their topic forms), then
+   restores the confirm prompt with `↩️ Ответ на: <link>` shown. Tag/send
+   buttons now carry the message id. `↩️ Другое сообщение` picks another one.
+4. The moderation copy gets an `↩️ Replying to message` link button to the
+   target message, so moderators see what it answers.
+5. On approval the bot publishes with `reply_parameters`. If the target message
+   no longer exists, the message is still posted, just not as a reply.
+
+Links to other chats and channel comment links (`?comment=`) are refused. The
+bot cannot check that the message exists when the link is sent (there is no
+`getMessage`), so a deleted target is only discovered at approval — and then
+handled by posting without the reply.
 
 ### Spoilers
 
@@ -70,6 +95,11 @@ moderation and target chats. Approval works directly off the moderation-chat
 message itself — its own `message_id`, caption and (for spoilered media)
 `file_id` are all publishing needs — so no mapping between users and messages
 is ever needed.
+
+The one dynamic piece — the id of the message being replied to — is appended to
+the buttons' `callback_data` (`mod:approve:<id>`, `snd:mine:<id>`), so it
+travels with the Telegram messages themselves. Buttons without an id (sent
+before this feature) still work and simply don't reply.
 
 Because of that, anyone who can see the moderation chat can act on submissions,
 and the callback handler additionally refuses any button press that did not come
@@ -237,10 +267,12 @@ bot/
 ├── main.py                 # entrypoint: webhook server / polling fallback
 ├── config.py               # env-based settings, fail-fast validation
 ├── keyboards.py            # Tag/send/moderation/status inline keyboards
+├── links.py                # t.me message link parsing/building (pure)
 ├── relay.py                # relay() into moderation, publish() into target w/ spoiler
 ├── handlers/
     ├── user.py             # /start + private messages → moderation chat
     └── moderation.py       # Approve/Reject callback handling
+tests/                      # offline tests: python -m unittest discover -s tests -t .
 Dockerfile                  # runs the bot in polling mode
 render.yaml                 # Render Blueprint: always-on background worker
 ```

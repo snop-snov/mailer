@@ -72,12 +72,16 @@ def build_message_url(
 # The "send a link" ask message is a ForceReply, which cannot carry buttons, and
 # Telegram strips nested replies, so the sender's reply shows us that message but
 # not the prompt behind it. The prompt's id and whether it takes a tag therefore
-# ride along on a text link inside the ask message.
-_ASK_URL_RE = re.compile(r"^https://t\.me/[A-Za-z0-9_]+/(?P<prompt>\d+)\?r=(?P<flag>[tp])$")
+# ride along on a text link inside the ask message. The URL is the bot's own
+# profile with query parameters only: a t.me/<bot>/<number> path would be read
+# as a message link and fail with "message doesn't exist" when tapped.
+_ASK_URL_RE = re.compile(
+    r"^https://t\.me/[A-Za-z0-9_]+\?p=(?P<prompt>\d+)&r=(?P<flag>[tp])$"
+)
 
 
 def build_ask_url(bot_username: str, prompt_id: int, taggable: bool) -> str:
-    return f"https://t.me/{bot_username}/{prompt_id}?r={'t' if taggable else 'p'}"
+    return f"https://t.me/{bot_username}?p={prompt_id}&r={'t' if taggable else 'p'}"
 
 
 def parse_ask_url(url: str) -> tuple[int, bool] | None:

@@ -86,10 +86,12 @@ class AskUrlTest(unittest.TestCase):
 
     def test_rejects_other_urls(self):
         for url in [
-            "https://t.me/some_bot/321",
-            "https://t.me/some_bot/321?r=x",
+            "https://t.me/some_bot/321",  # a message link, not an ask payload
+            "https://t.me/some_bot/321?r=t",
+            "https://t.me/some_bot?p=321&r=x",
+            "https://t.me/some_bot?p=abc&r=t",
             "https://t.me/c/123/9",
-            "https://example.com/some_bot/321?r=t",
+            "https://example.com/some_bot?p=321&r=t",
         ]:
             with self.subTest(url=url):
                 self.assertIsNone(parse_ask_url(url))

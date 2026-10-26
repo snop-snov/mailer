@@ -51,7 +51,9 @@ target chat:
    A `ForceReply` cannot carry buttons, and Telegram strips nested replies, so
    the user's reply shows the bot only the ask message, not the prompt behind
    it. The prompt's `message_id` and whether it takes a tag therefore ride on a
-   text link (the leading `↩️`, `t.me/<bot>/<prompt_id>?r=t|p`) inside the ask.
+   text link (the leading `↩️`, `t.me/<bot>?p=<prompt_id>&r=t|p`) inside the ask.
+   It is the bot's own profile with query parameters, not a `t.me/<bot>/<n>`
+   path, which Telegram would read as a message link.
 4. The moderation copy gets an `↩️ Replying to message` link button to the
    target message, so moderators see what it answers.
 5. On approval the bot publishes with `reply_parameters`. If the target message

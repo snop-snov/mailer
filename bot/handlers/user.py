@@ -184,6 +184,7 @@ async def handle_reply_request(callback: CallbackQuery, bot: Bot) -> None:
         # The leading arrow is the link carrying the payload; see build_ask_url.
         await prompt.answer(
             **Text(TextLink("↩️", url=url), ASK_LINK_TEXT).as_kwargs(),
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
             reply_markup=ForceReply(input_field_placeholder=LINK_PLACEHOLDER),
         )
     except Exception:

@@ -1,6 +1,12 @@
 import unittest
 
-from bot.links import MessageLink, build_message_url, parse_message_link
+from bot.links import (
+    MessageLink,
+    build_ask_url,
+    build_message_url,
+    parse_ask_url,
+    parse_message_link,
+)
 
 
 class ParseMessageLinkTest(unittest.TestCase):
@@ -69,6 +75,24 @@ class BuildMessageUrlTest(unittest.TestCase):
 
     def test_basic_group_has_no_link(self):
         self.assertIsNone(build_message_url(-4567, None, 5))
+
+
+class AskUrlTest(unittest.TestCase):
+    def test_round_trip(self):
+        for taggable in (True, False):
+            with self.subTest(taggable=taggable):
+                url = build_ask_url("some_bot", 321, taggable)
+                self.assertEqual(parse_ask_url(url), (321, taggable))
+
+    def test_rejects_other_urls(self):
+        for url in [
+            "https://t.me/some_bot/321",
+            "https://t.me/some_bot/321?r=x",
+            "https://t.me/c/123/9",
+            "https://example.com/some_bot/321?r=t",
+        ]:
+            with self.subTest(url=url):
+                self.assertIsNone(parse_ask_url(url))
 
 
 if __name__ == "__main__":

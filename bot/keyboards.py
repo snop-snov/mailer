@@ -19,14 +19,10 @@ MINE_CALLBACK = "snd:mine"
 NOT_MINE_CALLBACK = "snd:notmine"
 CANCEL_CALLBACK = "snd:cancel"
 REPLY_CALLBACK = "snd:reply"
-# Back from the "send a link" step. Carries whether the submission can take a
-# tag (t/p), because the prompt no longer exposes the submission it replies to.
-BACK_CALLBACK = "snd:back"
 
 CANCEL_TEXT = "❌ Стоп Отмена!!"
 REPLY_TEXT = "↩️ Ответить на сообщение"
 REPLY_CHANGE_TEXT = "↩️ Другое сообщение"
-BACK_TEXT = "← Назад"
 REPLY_URL_TEXT = "↩️ Replying to message"
 
 TAGS: dict[str, str | None] = {
@@ -94,16 +90,6 @@ def build_send_keyboard(reply_to: int | None = None) -> InlineKeyboardMarkup:
     )
     builder.button(text=CANCEL_TEXT, callback_data=CANCEL_CALLBACK)
     builder.adjust(1, 1, 1)
-    return builder.as_markup()
-
-
-def build_link_request_keyboard(taggable: bool) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(
-        text=BACK_TEXT, callback_data=f"{BACK_CALLBACK}:{'t' if taggable else 'p'}"
-    )
-    builder.button(text=CANCEL_TEXT, callback_data=CANCEL_CALLBACK)
-    builder.adjust(2)
     return builder.as_markup()
 
 

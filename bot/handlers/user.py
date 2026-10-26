@@ -7,21 +7,26 @@ import logging
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import CommandStart
-from aiogram.types import CallbackQuery, LinkPreviewOptions, Message
+from aiogram.types import CallbackQuery, ForceReply, LinkPreviewOptions, Message
+from aiogram.utils.formatting import Text, TextLink
 
 from bot.config import Settings
 from bot.keyboards import (
-    BACK_CALLBACK,
     CANCEL_CALLBACK,
     REPLY_CALLBACK,
     TAGS,
-    build_link_request_keyboard,
     build_moderation_keyboard,
     build_send_keyboard,
     build_tag_keyboard,
     unpack,
 )
-from bot.links import MessageLink, build_message_url, parse_message_link
+from bot.links import (
+    MessageLink,
+    build_ask_url,
+    build_message_url,
+    parse_ask_url,
+    parse_message_link,
+)
 from bot.relay import CAPTIONABLE, relay
 
 logger = logging.getLogger(__name__)
@@ -45,14 +50,11 @@ LOST_TEXT = "Не вижу исходное сообщение — пришли�
 CANCELLED_TEXT = (
     "❌ Сообщение не отправлено. Пришлите следующее собщение, чтобы продолжить."
 )
-# HTML: the bot sends plain text by default, this one message needs bold.
-ASK_LINK_TEXT = (
-    "Пришлите ссылку на сообщение, на которое хотите ответить \n"
-    "<b>↩️ ответом на это сообщение</b>."
-)
+ASK_LINK_TEXT = " Пришлите ссылку на сообщение, на которое хотите ответить."
+LINK_PLACEHOLDER = "https://t.me/…/123"
 BAD_LINK_TEXT = (
-    "Это не похоже на ссылку на сообщение. Пришлите только ссылку "
-    "(https://t.me/…/123) ответом на моё сообщение выше."
+    "Это не похоже на ссылку на сообщение. "
+    "Пришлите только ссылку (https://t.me/…/123) ответом на моё сообщение выше."
 )
 WRONG_CHAT_TEXT = (
     "Эта ссылка ведёт в другой чат. Ответить можно только на сообщение в нашем чате."
@@ -71,21 +73,20 @@ def _confirm_prompt(taggable: bool, reply_to: int | None = None):
     return CONFIRM_PLAIN_TEXT, build_send_keyboard(reply_to)
 
 
-def _link_request(message: Message) -> bool | dict[str, bool]:
-    """Match a text sent as a reply to the "send a link" prompt.
+def _link_request(message: Message) -> bool | dict[str, int | bool]:
+    """Match a text sent as a reply to the "send a link" ask message.
 
-    That prompt is recognised by its Back button, which also says whether the
-    submission can take a tag — the prompt itself no longer exposes the
-    submission it replies to.
+    The ask message is recognised by the text link `build_ask_url` put on it,
+    which also names the prompt to resume and whether it takes a tag.
     """
-    prompt = message.reply_to_message
-    if not message.text or prompt is None or prompt.reply_markup is None:
+    ask = message.reply_to_message
+    if not message.text or ask is None or not ask.entities:
         return False
-    for row in prompt.reply_markup.inline_keyboard:
-        for button in row:
-            data = button.callback_data or ""
-            if data.startswith(f"{BACK_CALLBACK}:"):
-                return {"taggable": data.endswith(":t")}
+    for entity in ask.entities:
+        if entity.type == "text_link" and entity.url:
+            parsed = parse_ask_url(entity.url)
+            if parsed is not None:
+                return {"prompt_id": parsed[0], "taggable": parsed[1]}
     return False
 
 
@@ -112,10 +113,9 @@ async def _reply_url(bot: Bot, chat_id: int, message_id: int | None) -> str | No
 
 @router.message(F.text, _link_request)
 async def handle_link(
-    message: Message, bot: Bot, settings: Settings, taggable: bool
+    message: Message, bot: Bot, settings: Settings, prompt_id: int, taggable: bool
 ) -> None:
-    """The sender answered the "send a link" prompt: validate it, then resume."""
-    prompt = message.reply_to_message
+    """The sender answered the "send a link" ask: validate it, then resume."""
     link = parse_message_link(message.text)
     if link is None:
         await message.reply(BAD_LINK_TEXT)
@@ -126,13 +126,23 @@ async def handle_link(
 
     text, keyboard = _confirm_prompt(taggable, link.message_id)
     try:
-        await prompt.edit_text(
-            f"{text}\n\n{REPLY_NOTE.format(url=message.text.strip())}",
+        await bot.edit_message_text(
+            chat_id=message.chat.id,
+            message_id=prompt_id,
+            text=f"{text}\n\n{REPLY_NOTE.format(url=message.text.strip())}",
             reply_markup=keyboard,
             link_preview_options=LinkPreviewOptions(is_disabled=True),
         )
     except Exception:
         logger.exception("Failed to show the chosen reply target")
+        await message.reply(LOST_TEXT)
+        return
+
+    # The ask has served its purpose; drop it so it can't be answered twice.
+    try:
+        await message.reply_to_message.delete()
+    except Exception:
+        logger.warning("Could not delete the reply-link ask")
 
 
 @router.message()
@@ -157,36 +167,27 @@ async def handle_cancel(callback: CallbackQuery) -> None:
 
 
 @router.callback_query(F.data == REPLY_CALLBACK)
-async def handle_reply_request(callback: CallbackQuery) -> None:
-    """Ask for a link; the prompt becomes the thing the link is sent in reply to."""
+async def handle_reply_request(callback: CallbackQuery, bot: Bot) -> None:
+    """Ask for a link with a ForceReply, so the client opens straight in reply mode."""
     prompt = callback.message
     original = prompt.reply_to_message if isinstance(prompt, Message) else None
     if original is None:
         await callback.answer(LOST_TEXT, show_alert=True)
         return
+
+    url = build_ask_url(
+        (await bot.me()).username,
+        prompt.message_id,
+        original.content_type in CAPTIONABLE,
+    )
     try:
-        await prompt.edit_text(
-            ASK_LINK_TEXT,
-            parse_mode="HTML",
-            reply_markup=build_link_request_keyboard(
-                original.content_type in CAPTIONABLE
-            ),
+        # The leading arrow is the link carrying the payload; see build_ask_url.
+        await prompt.answer(
+            **Text(TextLink("↩️", url=url), ASK_LINK_TEXT).as_kwargs(),
+            reply_markup=ForceReply(input_field_placeholder=LINK_PLACEHOLDER),
         )
     except Exception:
         logger.exception("Failed to ask for a reply link")
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith(f"{BACK_CALLBACK}:"))
-async def handle_back(callback: CallbackQuery) -> None:
-    """Abandon the reply and go back to the plain confirm prompt."""
-    prompt = callback.message
-    if isinstance(prompt, Message):
-        text, keyboard = _confirm_prompt(callback.data.endswith(":t"))
-        try:
-            await prompt.edit_text(text, reply_markup=keyboard)
-        except Exception:
-            logger.exception("Failed to restore the confirm prompt")
     await callback.answer()
 
 

@@ -67,3 +67,22 @@ def build_message_url(
     if raw.startswith("-100"):
         return f"https://t.me/c/{raw[4:]}/{message_id}"
     return None  # basic groups have no message links
+
+
+# The "send a link" ask message is a ForceReply, which cannot carry buttons, and
+# Telegram strips nested replies, so the sender's reply shows us that message but
+# not the prompt behind it. The prompt's id and whether it takes a tag therefore
+# ride along on a text link inside the ask message.
+_ASK_URL_RE = re.compile(r"^https://t\.me/[A-Za-z0-9_]+/(?P<prompt>\d+)\?r=(?P<flag>[tp])$")
+
+
+def build_ask_url(bot_username: str, prompt_id: int, taggable: bool) -> str:
+    return f"https://t.me/{bot_username}/{prompt_id}?r={'t' if taggable else 'p'}"
+
+
+def parse_ask_url(url: str) -> tuple[int, bool] | None:
+    """Inverse of `build_ask_url`: (prompt_id, taggable), or None."""
+    match = _ASK_URL_RE.match(url)
+    if match is None:
+        return None
+    return int(match["prompt"]), match["flag"] == "t"

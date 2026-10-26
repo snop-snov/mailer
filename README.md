@@ -37,14 +37,21 @@ messages are published to a target chat or channel with no sender attribution.
 A sender can make the published message a reply to an existing message in the
 target chat:
 
-1. Tap `↩️ Ответить на сообщение`. The prompt turns into a request for a link,
-   with `← Назад` (drop the reply) and cancel buttons.
-2. Send the message link (Telegram: long-press → *Copy link*) **as a reply to
-   that prompt**. A link sent any other way is treated as a new submission.
+1. Tap `↩️ Ответить на сообщение`. The bot sends a short message asking for a
+   link, as a `ForceReply`, so the Telegram client opens straight in reply mode
+   aimed at it. The original prompt stays as it is.
+2. Paste the message link (Telegram: long-press → *Copy link*) and send. If the
+   link is sent without replying to the ask, it is treated as a new submission.
 3. The bot checks that the link is a message in `TARGET_CHAT_ID` (accepted:
    `t.me/c/<id>/<msg>`, `t.me/<username>/<msg>`, and their topic forms), then
-   restores the confirm prompt with `↩️ Ответ на: <link>` shown. Tag/send
-   buttons now carry the message id. `↩️ Другое сообщение` picks another one.
+   edits the original prompt to show `↩️ Ответ на: <link>` and deletes the ask.
+   Tag/send buttons now carry the message id. `↩️ Другое сообщение` picks
+   another one.
+
+   A `ForceReply` cannot carry buttons, and Telegram strips nested replies, so
+   the user's reply shows the bot only the ask message, not the prompt behind
+   it. The prompt's `message_id` and whether it takes a tag therefore ride on a
+   text link (the leading `↩️`, `t.me/<bot>/<prompt_id>?r=t|p`) inside the ask.
 4. The moderation copy gets an `↩️ Replying to message` link button to the
    target message, so moderators see what it answers.
 5. On approval the bot publishes with `reply_parameters`. If the target message
